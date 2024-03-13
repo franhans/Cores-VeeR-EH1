@@ -6,15 +6,15 @@
 #define PREF_STALLS1  1 
 #define PREF_STALLS2  1 
 
-#ifndef NOELV
-  #define NOELV 1
+#ifndef NOELV_EXEC
+  #define NOELV_EXEC 0
 #endif
 
 #ifndef PERF
   #define PERF 2
 #endif
 
-#if NOELV == 0
+#if NOELV_EXEC == 0
   // Performance counters set-up and reading
   #define ICACHE_MISS              3
   #define BRANCH                   24
@@ -246,7 +246,7 @@ typedef clock_t CORE_TICKS;
  #define MEM_LOCATION "STATIC"
 #endif
 
-#if NOELV == 1 
+#if NOELV_EXEC == 1 
 
   #ifndef SIMULATION
     #define SIMULATION 1
@@ -520,7 +520,7 @@ ee_u8 core_stop_parallel(core_results *res);
 /* Performance counter funcitons*/
 void setEvents(void) {
 
-#if NOELV == 0
+#if NOELV_EXEC == 0
   #if PREF_BRANCH == 1 
     write_csr(0x323, BRANCH);
     write_csr(0x324, BRANCH_MISS);
@@ -1355,7 +1355,7 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
         ee_u8 stack_memblock[TOTAL_DATA_SIZE*MULTITHREAD];
 #endif
         volatile ee_u32 instructions;
-#if NOELV == 1
+#if NOELV_EXEC == 1
         write_csr(0x7c0, 0);
 #endif
 #if CHECK == 1
@@ -1518,7 +1518,7 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 
         instructions = read_csr(minstret);
 
-        #if NOELV == 1
+        #if NOELV_EXEC == 1
           asm volatile (
               "mv a0, %0"   // Move the value of 'instructions' into register 'a0'
               : // No output constraints

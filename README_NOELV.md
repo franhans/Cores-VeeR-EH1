@@ -8,11 +8,15 @@ Some modifications have been done to the original repo, namely:
 To obtain a decent score in CoreMark in the SweRV-VeeR-EH1 we have to compile and execute cmark_dccm test to make use of the data tightly-coupled memory.
 To generate a srec file that can be executed in the NOEL-V the test cmark has to be compiled. 
 
+To clean:
+`make -f $RV_ROOT/tools/Makefile clean`
 
 To execute CoreMark in SweRV-VeeR-EH1 in QuestaSim:
-`make -f $RV_ROOT/tools/Makefile vlog TEST=cmark_dccm`
+`make -f ./tools/Makefile vlog target=high_perf TEST=cmark_dccm`
+Last CoreMark score: 5.49
 
 To generate srec file for NOEL-V simulation:
-`make -f $RV_ROOT/tools/Makefile ram.srec TEST=cmark_dccm`
+`make -f $RV_ROOT/tools/Makefile ram.srec TEST=cmark NOELV=1`
+Last CoreMark score: 5.1
 
 **RV_ROOT** should point to the root directory.
