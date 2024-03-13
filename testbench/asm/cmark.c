@@ -2,6 +2,117 @@
 
 #define ITERATIONS 1
 
+#define PREF_BRANCH   1 
+#define PREF_STALLS1  1 
+#define PREF_STALLS2  1 
+
+#ifndef NOELV
+  #define NOELV 1
+#endif
+
+#ifndef PERF
+  #define PERF 2
+#endif
+
+#if NOELV == 0
+  // Performance counters set-up and reading
+  #define ICACHE_MISS              3
+  #define BRANCH                   24
+  #define BRANCH_MISS              25
+  #define BRANCH_TAKEN             26
+  #define UNPREDICT_BRANCH         27
+  // pipeline stalls and pipeline freeze
+  #define CYCLES_FETCH_STALLED     28
+  #define CYCLES_ALIGNER_STALLED   29
+  #define CYCLES_DECODE_STALLED    30
+  #define CYCLES_POSTSYNC_STALLED  31
+  #define CYCLES_PRESYNC_STALLED   32
+  #define CYCLES_FROZEN            33
+  #define CYCLES_SB_WB_STALLED     34
+#else
+  #define HOLD                  1
+  #define HOLD_ISSUE            (HOLD              + 1)
+  #define SINGLE_ISSUE          (HOLD_ISSUE        + 1)
+  #define DUAL_ISSUE            (SINGLE_ISSUE      + 1)
+  #define BRANCH_MISS           (DUAL_ISSUE        + 1)
+  #define BTB_HIT               (BRANCH_MISS       + 1)
+  #define BRANCH                (BTB_HIT           + 1)
+  #define LOAD_DEP              (BRANCH            + 1)
+  #define STORE_B2B             (LOAD_DEP          + 1)
+  #define JALR                  (STORE_B2B         + 1)
+  #define JAL                   (JALR              + 1)
+  #define RAS_HIT               (JAL               + 1)
+
+  #define RA_BUBBLE             (RAS_HIT           + 1)        
+  #define EX_BUBBLE             (RA_BUBBLE         + 1)
+  #define FLUSHED_INST          (EX_BUBBLE         + 1)
+
+  #define ICCOUNTERS_INIT       (FLUSHED_INST      + 1)
+
+  #define ICLALU_INIT           (ICCOUNTERS_INIT   + 20)
+
+  #define LALU_PAIR             (ICLALU_INIT       + 4)
+
+  #define END_IU                (LALU_PAIR         + 1)
+
+  #define IU_INTERNALS          7
+  #define SFENCE_VMA            (END_IU            + 1)
+  #define HFENCE_VVMA           (SFENCE_VMA        + 1)
+  #define HFENCE_GVMA           (HFENCE_VVMA       + 1)
+  #define TLB_FENCE_00          (HFENCE_GVMA       + 1)
+  #define TLB_FENCE_01          (TLB_FENCE_00      + 1)
+  #define TLB_FENCE_10          (TLB_FENCE_01      + 1)
+  #define TLB_FENCE_11          (TLB_FENCE_10      + 1)
+
+  #define AFTER_IU              (END_IU + IU_INTERNALS + 1)
+
+  #define ICACHE_MISS           AFTER_IU
+  #define DCACHE_MISS           (ICACHE_MISS       + 1)
+  #define ITLB_MISS             (DCACHE_MISS       + 1)
+  #define DTLB_MISS             (ITLB_MISS         + 1)
+  #define HTLB_MISS             (DTLB_MISS         + 1)
+  #define DCACHE_FLUSH          (HTLB_MISS         + 1)
+  #define DCACHE_ACCESS         (DCACHE_FLUSH      + 1)
+  #define DCACHE_LOAD           (DCACHE_ACCESS     + 1)
+  #define DCACHE_STORE          (DCACHE_LOAD       + 1)
+  #define DCACHE_LOAD_HIT       (DCACHE_STORE      + 1)
+  #define DCACHE_STORE_HIT      (DCACHE_LOAD_HIT   + 1)
+  #define DCACHE_STBUF_FULL     (DCACHE_STORE_HIT  + 1)
+  #define ICACHE_STREAM         (DCACHE_STBUF_FULL + 1)
+  #define DTLB_ENTRY_FLUSH      (ICACHE_STREAM     + 1)
+  #define ITLB_ENTRY_FLUSH      (DTLB_ENTRY_FLUSH  + 1)
+  #define HTLB_ENTRY_FLUSH      (ITLB_ENTRY_FLUSH  + 1)
+  #define AFTER_CCTRL           (HTLB_ENTRY_FLUSH  + 1)
+
+  #define FPU_LOW               AFTER_CCTRL
+#endif
+
+
+//----------------------------------------------------------
+// CSR instructions
+//----------------------------------------------------------
+
+#define read_csr(reg) ({ unsigned long __tmp; \
+  asm volatile ("csrr %0, " #reg : "=r"(__tmp)); \
+  __tmp; })
+
+#define write_csr(reg, val) ({ \
+  asm volatile ("csrw " #reg ", %0" :: "rK"(val)); })
+
+#define swap_csr(reg, val) ({ unsigned long __tmp; \
+  asm volatile ("csrrw %0, " #reg ", %1" : "=r"(__tmp) : "rK"(val)); \
+  __tmp; })
+
+#define set_csr(reg, bit) ({ unsigned long __tmp; \
+  asm volatile ("csrrs %0, " #reg ", %1" : "=r"(__tmp) : "rK"(bit)); \
+  __tmp; })
+
+#define clear_csr(reg, bit) ({ unsigned long __tmp; \
+  asm volatile ("csrrc %0, " #reg ", %1" : "=r"(__tmp) : "rK"(bit)); \
+  __tmp; })
+
+
+
 
 /*
 Author : Shay Gal-On, EEMBC
@@ -135,19 +246,49 @@ typedef clock_t CORE_TICKS;
  #define MEM_LOCATION "STATIC"
 #endif
 
+#if NOELV == 1 
+
+  #ifndef SIMULATION
+    #define SIMULATION 1
+  #endif
+
+  #if SIMULATION == 1
+    #define CHECK 1
+
+    #define CAPI_BASE_ADDR     0x50000000
+    #define CAPI_REG_END_SIM   (0x14 + CAPI_BASE_ADDR)
+    #define CAPI_CHECKPOINT    (0x18 + CAPI_BASE_ADDR)
+
+    void END_SIM(void);
+
+    void END_SIM() {
+      *((volatile uint32_t *)CAPI_REG_END_SIM) = 0x0;
+    }  
+    void CHECKPOINT(uint32_t num) {
+      *((volatile uint32_t *)CAPI_CHECKPOINT) = num;
+    }  
+  #else
+    #define CHECK 0
+  #endif
+
+#else
+  #define SIMULATION 0
+#endif
+
 /* Data Types :
         To avoid compiler issues, define the data types that need ot be used for 8b, 16b and 32b in <core_portme.h>.
 
         *Imprtant* :
         ee_ptr_int needs to be the data type used to hold pointers, otherwise coremark may fail!!!
 */
-typedef signed short ee_s16;
-typedef unsigned short ee_u16;
-typedef signed int ee_s32;
-typedef double ee_f32;
-typedef unsigned char ee_u8;
-typedef unsigned int ee_u32;
-typedef ee_u32 ee_ptr_int;
+typedef int16_t ee_s16;
+typedef uint16_t ee_u16;
+typedef int32_t ee_s32;
+//typedef double ee_f32;
+typedef float ee_f32;
+typedef uint8_t ee_u8;
+typedef int32_t ee_u32;
+typedef uintptr_t ee_ptr_int;
 typedef size_t ee_size_t;
 /* align_mem :
         This macro is used to align an offset to point to a 32b value. It is used in the Matrix algorithm to initialize the input memory blocks.
@@ -376,6 +517,220 @@ ee_u8 core_start_parallel(core_results *res);
 ee_u8 core_stop_parallel(core_results *res);
 #endif
 
+/* Performance counter funcitons*/
+void setEvents(void) {
+
+#if NOELV == 0
+  #if PREF_BRANCH == 1 
+    write_csr(0x323, BRANCH);
+    write_csr(0x324, BRANCH_MISS);
+    write_csr(0x325, BRANCH_TAKEN);
+    write_csr(0x326, UNPREDICT_BRANCH);
+  #endif
+  #if PREF_STALLS1 == 1 
+    write_csr(0x323, CYCLES_FETCH_STALLED   );
+    write_csr(0x324, CYCLES_ALIGNER_STALLED );
+    write_csr(0x325, CYCLES_DECODE_STALLED  );
+    write_csr(0x326, CYCLES_POSTSYNC_STALLED);
+  #endif
+  #if PREF_STALLS2 == 1 
+    write_csr(0x323, CYCLES_PRESYNC_STALLED );
+    write_csr(0x324, CYCLES_FROZEN          );
+    write_csr(0x325, CYCLES_SB_WB_STALLED   );
+    write_csr(0x326, ICACHE_MISS);
+  #endif
+#else
+  
+  #if PERF == 1
+    // Branch
+    write_csr(0x323, BRANCH);
+    write_csr(0x324, BRANCH_MISS);
+    write_csr(0x325, BTB_HIT);
+    write_csr(0x326, JALR);
+    write_csr(0x327, JAL);
+    write_csr(0x328, RAS_HIT);
+    // Caches
+    write_csr(0x329, DCACHE_ACCESS);
+    write_csr(0x32a, DCACHE_LOAD_HIT);
+    write_csr(0x32b, DCACHE_STORE_HIT);
+    write_csr(0x32c, DCACHE_MISS);
+    write_csr(0x32d, ICACHE_MISS);
+    // Pipeline
+    write_csr(0x32e, SINGLE_ISSUE);
+    write_csr(0x32f, DUAL_ISSUE);
+    write_csr(0x330, HOLD);
+    write_csr(0x331, HOLD_ISSUE);
+    write_csr(0x332, LOAD_DEP);
+    write_csr(0x333, STORE_B2B);
+
+    write_csr(0x334, RA_BUBBLE   );
+    write_csr(0x335, EX_BUBBLE   );
+    write_csr(0x336, FLUSHED_INST);
+  #else
+  /*
+    write_csr(0x323, ICCOUNTERS_INIT     );
+    write_csr(0x324, ICCOUNTERS_INIT + 1 );
+    write_csr(0x325, ICCOUNTERS_INIT + 2 );
+    write_csr(0x326, ICCOUNTERS_INIT + 3 );
+    write_csr(0x327, ICCOUNTERS_INIT + 4 );
+    write_csr(0x328, ICCOUNTERS_INIT + 5 );
+    write_csr(0x329, ICCOUNTERS_INIT + 6 );
+    write_csr(0x32a, ICCOUNTERS_INIT + 7 );
+    write_csr(0x32b, ICCOUNTERS_INIT + 8 );
+    write_csr(0x32c, ICCOUNTERS_INIT + 9 );
+    write_csr(0x32d, ICCOUNTERS_INIT + 10);
+    write_csr(0x32e, ICCOUNTERS_INIT + 11);
+    write_csr(0x32f, ICCOUNTERS_INIT + 12);
+    write_csr(0x330, ICCOUNTERS_INIT + 13);
+    write_csr(0x331, ICCOUNTERS_INIT + 14);
+    write_csr(0x332, ICCOUNTERS_INIT + 15);
+    write_csr(0x333, ICCOUNTERS_INIT + 16);
+    write_csr(0x334, ICCOUNTERS_INIT + 17);
+
+    write_csr(0x335, SINGLE_ISSUE);
+    write_csr(0x336, DUAL_ISSUE);
+    write_csr(0x337, HOLD);
+    write_csr(0x338, HOLD_ISSUE);
+    //write_csr(0x339, LOAD_DEP);
+    //write_csr(0x33a, STORE_B2B);
+
+    write_csr(0x339, RA_BUBBLE   );
+    write_csr(0x33a, EX_BUBBLE   );
+    write_csr(0x33b, FLUSHED_INST);
+
+    write_csr(0x33c, ICLALU_INIT    );
+    write_csr(0x33d, ICLALU_INIT + 1); 
+    write_csr(0x33e, ICLALU_INIT + 2);
+    write_csr(0x33f, ICLALU_INIT + 3);
+   */
+
+
+
+    write_csr(0x323, ICCOUNTERS_INIT + 1 );
+    write_csr(0x324, ICCOUNTERS_INIT + 2 );
+    write_csr(0x325, ICCOUNTERS_INIT + 3 );
+    write_csr(0x326, ICCOUNTERS_INIT + 4 );
+    write_csr(0x327, ICCOUNTERS_INIT + 13);
+    write_csr(0x328, ICCOUNTERS_INIT + 14);
+    write_csr(0x329, ICCOUNTERS_INIT + 18);
+    write_csr(0x32a, ICCOUNTERS_INIT + 19);
+
+    write_csr(0x32b, SINGLE_ISSUE);
+    write_csr(0x32c, DUAL_ISSUE);
+    write_csr(0x32d, HOLD);
+    write_csr(0x32e, HOLD_ISSUE);
+    //write_csr(0x339, LOAD_DEP);
+    //write_csr(0x33a, STORE_B2B);
+
+    write_csr(0x32f, RA_BUBBLE   );
+    write_csr(0x330, EX_BUBBLE   );
+    write_csr(0x331, FLUSHED_INST);
+
+    write_csr(0x332, ICLALU_INIT    );
+    write_csr(0x333, ICLALU_INIT + 1); 
+    write_csr(0x334, ICLALU_INIT + 2);
+    write_csr(0x335, ICLALU_INIT + 3);
+    write_csr(0x336, LALU_PAIR);
+
+    write_csr(0x337, ICCOUNTERS_INIT + 17); // hold when late alu disabled
+
+    write_csr(0x338, BRANCH);
+    write_csr(0x339, BRANCH_MISS);
+    write_csr(0x33a, BTB_HIT);
+    write_csr(0x33b, JALR);
+    write_csr(0x33c, JAL);
+    write_csr(0x33d, RAS_HIT);
+
+  #endif
+#endif
+
+}
+
+
+void resetCounters(void) {
+  write_csr(0xB00, 0);
+  write_csr(0xB02, 0);
+  write_csr(0xB03, 0);
+  write_csr(0xB04, 0);
+  write_csr(0xB05, 0);
+  write_csr(0xB06, 0);
+  write_csr(0xB07, 0);
+  write_csr(0xB08, 0);
+  write_csr(0xB09, 0);
+  write_csr(0xB0a, 0);
+  write_csr(0xB0b, 0);
+  write_csr(0xB0c, 0);
+  write_csr(0xB0d, 0);
+  write_csr(0xB0e, 0);
+  write_csr(0xB0f, 0);
+  write_csr(0xB10, 0);
+  write_csr(0xB11, 0);
+  write_csr(0xB12, 0);
+  write_csr(0xB13, 0);
+  write_csr(0xB14, 0);
+  write_csr(0xB15, 0);
+  write_csr(0xB16, 0);
+  write_csr(0xB17, 0);
+  write_csr(0xB18, 0);
+  write_csr(0xB19, 0);
+}
+
+void readCounters(void) {
+  uint32_t cycles           = read_csr(0xB00);
+  uint32_t inst             = read_csr(0xB02);
+
+#if PREF_BRANCH == 1 
+  uint32_t branch           = read_csr(0xB03);
+  uint32_t branch_misspred  = read_csr(0xB04);
+  uint32_t branch_taken     = read_csr(0xB05);
+  uint32_t unpredict_branch = read_csr(0xB06);
+#endif
+
+#if PREF_STALLS1 == 1 
+  uint32_t fetch_stalled    = read_csr(0xB03);
+  uint32_t aligner_stalled  = read_csr(0xB04);
+  uint32_t decode_stalled   = read_csr(0xB05);
+  uint32_t postsync_stalled = read_csr(0xB06);
+#endif
+
+#if PREF_STALLS2 == 1 
+  uint32_t presync_stalled  = read_csr(0xB03);
+  uint32_t cycles_frozen    = read_csr(0xB04);
+  uint32_t sb_wb_stalled    = read_csr(0xB05);
+  uint32_t icache_miss      = read_csr(0xB06);
+#endif
+
+
+  //uint32_t cycles_stalled = fetch_stalled + aligner_stalled + decode_stalled + postsync_stalled + presync_stalled + sb_wb_stalled;
+
+  ee_printf("Cycles:                   %u\n", cycles);
+  ee_printf("Instructions:             %u\n", inst);
+#if PREF_BRANCH == 1 
+  ee_printf("Branches:                 %u\n", branch);
+  ee_printf("Branches misspred.:       %u\n", branch_misspred);
+  ee_printf("Branches taken:           %u\n", branch_taken);
+  ee_printf("Unpred. branches:         %u\n", unpredict_branch);
+#endif
+
+
+#if PREF_STALLS1 == 1 
+  ee_printf("Cycles fetch stalled:     %u\n", fetch_stalled   );
+  ee_printf("Cycles aligner stalled:   %u\n", aligner_stalled );
+  ee_printf("Cycles decode stalled:    %u\n", decode_stalled  );
+  ee_printf("Cycles postsync stalled:  %u\n", postsync_stalled);
+#endif
+
+#if PREF_STALLS2 == 1 
+  ee_printf("Cycles presync stalled:   %u\n", presync_stalled );
+  ee_printf("Cycles frozen:            %u\n", cycles_frozen   );
+  ee_printf("Cycles SB/WB stalled:     %u\n", sb_wb_stalled   );
+  ee_printf("ICACHE misses:            %u\n", icache_miss);
+#endif
+  
+}
+
+
+
 /* list benchmark functions */
 list_head *core_list_init(ee_u32 blksize, list_head *memblock, ee_s16 seed);
 ee_u16 core_bench_list(core_results *res, ee_s16 finder_idx);
@@ -514,9 +869,15 @@ ee_u16 core_bench_list(core_results *res, ee_s16 finder_idx) {
         list_data info;
         ee_s16 i;
 
+        #if CHECK == 1
+          CHECKPOINT(1);
+        #endif
         info.idx=finder_idx;
         /* find <find_num> values in the list, and change the list each time (reverse and cache if value found) */
         for (i=0; i<find_num; i++) {
+                #if CHECK == 1
+                  CHECKPOINT(i);
+                #endif
                 info.data16= (i & 0xff) ;
                 this_find=core_list_find(list,&info);
                 list=core_list_reverse(list);
@@ -542,6 +903,9 @@ ee_u16 core_bench_list(core_results *res, ee_s16 finder_idx) {
         ee_printf("List find %d: [%d,%d,%d]\n",i,retval,missed,found);
 #endif
         }
+        #if CHECK == 1
+          CHECKPOINT(3);
+        #endif
         retval+=found*4-missed;
         /* sort the list by data content and remove one item*/
         if (finder_idx>0)
@@ -558,6 +922,9 @@ ee_u16 core_bench_list(core_results *res, ee_s16 finder_idx) {
 #if CORE_DEBUG
         ee_printf("List sort 1: %04x\n",retval);
 #endif
+        #if CHECK == 1
+          CHECKPOINT(4);
+        #endif
         remover=core_list_undo_remove(remover,list->next);
         /* sort the list by index, in effect returning the list to original state */
         list=core_list_mergesort(list,cmp_idx,NULL);
@@ -917,10 +1284,26 @@ void *iterate(void *pres) {
         res->crcstate=0;
 
         for (i=0; i<iterations; i++) {
+
+                #if CHECK == 1
+                  CHECKPOINT(5);
+                #endif
                 crc=core_bench_list(res,1);
+                #if CHECK == 1
+                  CHECKPOINT(6);
+                #endif
                 res->crc=crcu16(crc,res->crc);
+                #if CHECK == 1
+                  CHECKPOINT(7);
+                #endif
                 crc=core_bench_list(res,-1);
+                #if CHECK == 1
+                  CHECKPOINT(8);
+                #endif
                 res->crc=crcu16(crc,res->crc);
+                #if CHECK == 1
+                  CHECKPOINT(9);
+                #endif
                 if (i==0) res->crclist=res->crc;
         }
         return NULL;
@@ -970,6 +1353,13 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
         core_results results[MULTITHREAD];
 #if (MEM_METHOD==MEM_STACK)
         ee_u8 stack_memblock[TOTAL_DATA_SIZE*MULTITHREAD];
+#endif
+        volatile ee_u32 instructions;
+#if NOELV == 1
+        write_csr(0x7c0, 0);
+#endif
+#if CHECK == 1
+        CHECKPOINT(0);
 #endif
         /* first call any initializations needed */
         portable_init(&(results[0].port), &argc, argv);
@@ -1055,12 +1445,21 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
         for (i=0 ; i<MULTITHREAD; i++) {
                 if (results[i].execs & ID_LIST) {
                         results[i].list=core_list_init(results[0].size,results[i].memblock[1],results[i].seed1);
+                        #if CHECK == 1
+                          CHECKPOINT(1);
+                        #endif
                 }
                 if (results[i].execs & ID_MATRIX) {
                         core_init_matrix(results[0].size, results[i].memblock[2], (ee_s32)results[i].seed1 | (((ee_s32)results[i].seed2) << 16), &(results[i].mat) );
+                        #if CHECK == 1
+                          CHECKPOINT(2);
+                        #endif
                 }
                 if (results[i].execs & ID_STATE) {
                         core_init_state(results[0].size,results[i].seed1,results[i].memblock[3]);
+                        #if CHECK == 1
+                          CHECKPOINT(3);
+                        #endif
                 }
         }
 
@@ -1082,6 +1481,9 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
                         divisor=1;
                 results[0].iterations*=1+10/divisor;
         }
+        // Performance counters
+        setEvents();
+        resetCounters();
         /* perform actual benchmark */
         start_time();
 
@@ -1100,13 +1502,42 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
                 core_stop_parallel(&results[i]);
         }
 #else
+        #if CHECK == 1
+          CHECKPOINT(4);
+        #endif
         iterate(&results[0]);
 #endif
+        #if SIMULATION == 1
+          write_csr(mtvec, &END_SIM);
+        #endif
 
         __asm("__perf_end:");
 
         stop_time();
         total_time=get_time();
+
+        instructions = read_csr(minstret);
+
+        #if NOELV == 1
+          asm volatile (
+              "mv a0, %0"   // Move the value of 'instructions' into register 'a0'
+              : // No output constraints
+              : "r" (instructions) // Input constraint for 'instructions'
+              : "a0" // List of clobbered registers
+          );
+          asm volatile (
+              "mv a1, %0"   // Move the value of 'instructions' into register 'a0'
+              : // No output constraints
+              : "r" (total_time) // Input constraint for 'instructions'
+              : "a0" // List of clobbered registers
+          );
+          asm volatile (
+              "ebreak"
+          );
+        #endif
+
+        // Performance counters
+        readCounters();
         /* get a function of the input to report */
         seedcrc=crc16(results[0].seed1,seedcrc);
         seedcrc=crc16(results[0].seed2,seedcrc);
@@ -1173,6 +1604,8 @@ MAIN_RETURN_TYPE main(int argc, char *argv[]) {
 //              ee_printf("Iterations/Sec   : %d\n",default_num_contexts*results[0].iterations/time_in_secs(total_time));
                 ee_printf("Iterat/Sec/MHz   : %d.%02d\n",1000*default_num_contexts*results[0].iterations/time_in_secs(total_time),
                              100000*default_num_contexts*results[0].iterations/time_in_secs(total_time) % 100);
+                //ee_printf("Iterat/Sec/MHz   : %d\n",total_time/results[0].iterations/1e6,
+                 //            100000*default_num_contexts*results[0].iterations/time_in_secs(total_time) % 100);
 #endif
         if (time_in_secs(total_time) < 10) {
                 ee_printf("ERROR! Must execute for at least 10 secs for a valid result!\n");
@@ -2142,6 +2575,7 @@ void portable_init(core_portable *p, int *argc, char *argv[])
         if (sizeof(ee_u32) != 4) {
                 ee_printf("ERROR! Please define ee_u32 to a 32b unsigned type!\n");
         }
+
         p->portable_id=1;
 }
 /* Function : portable_fini

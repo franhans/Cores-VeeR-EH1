@@ -19,8 +19,11 @@ ifeq (,$(wildcard ${RV_ROOT}/configs/veer.config))
 $(error env var RV_ROOT does not point to a valid dir! Exiting!)
 endif
 
-TEST_CFLAGS = -g -O3 -funroll-all-loops
-ABI = -mabi=ilp32 -march=rv32imc
+#TEST_CFLAGS = -g -O3 
+
+TEST_CFLAGS ?= -g -O3 -funroll-all-loops -mtune=sifive-7-series -mbranch-cost=1 -Ofast --param=hot-bb-frequency-fraction=1 --param=max-tail-merge-iterations=0 -fno-aggressive-loop-optimizations -fgcse-las --param=max-grow-copy-bb-insns=7 --param=unroll-jam-min-percent=0 --param=large-unit-insns=0 -fno-delete-null-pointer-checks -fno-rename-registers --param=max-partial-antic-length=1 --param=loop-max-datarefs-for-datadeps=0 -funroll-all-loops --param=uninlined-function-insns=16 -fno-tree-vrp -fwrapv -fno-toplevel-reorder --param=max-inline-insns-size=128 -fipa-pta --param=max-cse-path-length=3 --param=inline-min-speedup=1 --param=max-sched-region-insns=7 --param=max-goto-duplication-insns=0 --param=max-gcse-insertion-ratio=0 -fno-tree-ter --param=max-average-unrolled-insns=128 -fno-dce --param=max-loop-header-insns=2 -fno-tree-loop-ivcanon -fno-tree-loop-distribute-patterns -fno-sched-rank-heuristic
+
+ABI ?= -mabi=ilp32 -march=rv32imzicsr
 
 # Allow snapshot override
 target = default
@@ -168,10 +171,19 @@ program.hex:
 else
 program.hex: $(OFILES) $(LINK)
 	@echo Building $(TEST)
-	$(GCC_PREFIX)-gcc $(ABI) -Wl,-Map=$(TEST).map -lgcc -T$(LINK) -o $(TEST).exe $(OFILES) -nostartfiles  $(TEST_LIBS)
+	$(GCC_PREFIX)-gcc $(ABI) -Wl,-Map=$(TEST).map -lgcc -T$(LINK) -o $(TEST).exe $(OFILES) -nostartfiles  $(TEST_LIBS) 
 	$(GCC_PREFIX)-objcopy -O verilog $(TEST).exe program.hex
 	$(GCC_PREFIX)-objdump -S  $(TEST).exe > $(TEST).dis
 	@echo Completed building $(TEST)
+
+ram.srec: $(OFILES) $(LINK)
+	$(GCC_PREFIX)-gcc $(ABI) -Wl,-Map=$(TEST).map -lgcc -T$(LINK) -o $(TEST).exe $(OFILES) -nostartfiles  $(TEST_LIBS) 
+	$(GCC_PREFIX)-objdump -S  $(TEST).exe > $(TEST).dis
+	$(GCC_PREFIX)-objcopy -O srec $(TEST).exe /home/franciscob/Desktop/grlib/verification/noelv-internal/noelv-triggers/ram.srec
+	cp $(TEST).exe /home/franciscob/Desktop/grlib/verification/noelv-internal/noelv-interrupts/executable.riscv
+	$(GCC_PREFIX)-objcopy -O srec $(TEST).exe ram.srec
+	$(GCC_PREFIX)-objdump -S  $(TEST).exe > $(TEST).dis
+
 
 %.o : %.s ${BUILD_DIR}/defines.h
 	$(GCC_PREFIX)-cpp -I${BUILD_DIR}  $<  > $*.cpp.s
